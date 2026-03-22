@@ -4,18 +4,10 @@ import cv2
 import time
 import threading
 
-# -------------------------
-# Page config
-# -------------------------
-
-st.set_page_config(
-    page_title="Deep Focus Monitor",
-    page_icon="🧘",
-    layout="centered"
-)
+st.set_page_config(page_title="Deep Focus Monitor", page_icon="🧘")
 
 st.title("🧘 Deep Focus Monitor")
-st.write("Stay in frame to keep your timer running")
+st.write("Stay in frame to keep timer running")
 
 lock = threading.Lock()
 
@@ -25,7 +17,7 @@ shared = {
 
 
 # -------------------------
-# Face Detector
+# Face detector
 # -------------------------
 
 class FaceDetector(VideoProcessorBase):
@@ -61,7 +53,7 @@ class FaceDetector(VideoProcessorBase):
                 img,
                 (x, y),
                 (x+w, y+h),
-                (0, 255, 0),
+                (0,255,0),
                 2
             )
 
@@ -72,7 +64,7 @@ class FaceDetector(VideoProcessorBase):
 
 
 # -------------------------
-# Start camera
+# Camera
 # -------------------------
 
 ctx = webrtc_streamer(
@@ -92,12 +84,15 @@ ctx = webrtc_streamer(
 if "focus_time" not in st.session_state:
     st.session_state.focus_time = 0
 
+if "running" not in st.session_state:
+    st.session_state.running = False
+
 if "last_time" not in st.session_state:
     st.session_state.last_time = time.time()
 
 
 # -------------------------
-# Status check
+# Check status
 # -------------------------
 
 camera_on = ctx.state.playing if ctx else False
@@ -108,22 +103,29 @@ with lock:
 
 now = time.time()
 
+
 if camera_on and focused:
 
-    st.session_state.focus_time += int(
-        now - st.session_state.last_time
-    )
+    if st.session_state.running:
+        st.session_state.focus_time += int(
+            now - st.session_state.last_time
+        )
 
+    st.session_state.running = True
     status = "✅ Focused"
     color = "green"
 
+
 elif camera_on and not focused:
 
+    st.session_state.running = False
     status = "❌ Not Focused"
     color = "red"
 
+
 else:
 
+    st.session_state.running = False
     status = "📷 Camera Off"
     color = "orange"
 
@@ -144,11 +146,3 @@ st.metric(
     "Focus Time",
     f"{st.session_state.focus_time} sec"
 )
-
-
-# -------------------------
-# Auto refresh
-# -------------------------
-
-time.sleep(1)
-st.experimental_rerun()
