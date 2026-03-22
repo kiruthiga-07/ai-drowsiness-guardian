@@ -1,64 +1,50 @@
 import streamlit as st
-from streamlit_webrtc import webrtc_streamer, VideoProcessorBase
+from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
 import cv2
-import time
-import threading
+import numpy as np
 
-# Page Configuration
-st.set_page_config(page_title="Deep Focus Monitor", page_icon="🧘")
-st.title("🧘 Deep Focus Monitor")
-st.write("Real-time AI monitoring. Stay in the frame to keep your timer running!")
+# Title and UI
+st.set_page_config(page_title="Auto-Focus Monitor", page_icon="👁️")
+st.title("👁️ Real-Time Focus Monitor")
+st.write("The timer below will count up as long as the AI sees your face!")
 
-# Shared variable to communicate between the video thread and the UI
-lock = threading.Lock()
-container = {"is_focused": False}
-
-# The Video Processor Class
-class FaceDetector(VideoProcessorBase):
+# This class handles the video frames automatically
+class FaceFocusTransformer(VideoTransformerBase):
     def __init__(self):
         self.face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+        self.count = 0
 
-    def recv(self, frame):
+    def transform(self, frame):
         img = frame.to_ndarray(format="bgr24")
+        
+        # Convert to grayscale for faster detection
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         faces = self.face_cascade.detectMultiScale(gray, 1.1, 4)
 
-        with lock:
-            container["is_focused"] = len(faces) > 0
+        # If a face is found, increment the internal counter
+        if len(faces) > 0:
+            self.count += 1
+            # Draw green box
+            for (x, y, w, h) in faces:
+                cv2.rectangle(img, (x, y), (x+w, y+h), (0, 255, 0), 2)
+                cv2.putText(img, "FOCUSED", (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+        else:
+            # Draw red warning
+            cv2.putText(img, "NOT DETECTED", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
 
-        # Draw a rectangle around the face for visual feedback
-        for (x, y, w, h) in faces:
-            cv2.rectangle(img, (x, y), (x+w, y+h), (0, 255, 0), 2)
-            cv2.putText(img, "FOCUSED", (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+        return img
 
-        return frame.from_ndarray(img, format="bgr24")
+# Create the WebRTC streamer
+# This is what turns on your camera automatically
+ctx = webrtc_streamer(key="example", video_transformer_factory=FaceFocusTransformer)
 
-# Start the WebRTC Streamer
-webrtc_streamer(key="focus-monitor", video_processor_factory=FaceDetector)
-
-# Focus Timer Logic in the UI
-if "start_time" not in st.session_state:
-    st.session_state.start_time = time.time()
-if "focus_seconds" not in st.session_state:
-    st.session_state.focus_seconds = 0
-
-placeholder = st.empty()
-
-# UI Update Loop
-while True:
-    with lock:
-        focused = container["is_focused"]
-
-    if focused:
-        st.session_state.focus_seconds += 1
-        status = "✅ You are focused!"
-        color = "green"
-    else:
-        status = "⚠️ LOOK AT THE SCREEN!"
-        color = "red"
-
-    with placeholder.container():
-        st.markdown(f"<h2 style='color: {color}; text-align: center;'>{status}</h2>", unsafe_allow_html=True)
-        st.metric("Total Focus Time", f"{st.session_state.focus_seconds} seconds")
+if ctx.video_transformer:
+    # Display the "Focus Score" (Total frames where a face was seen)
+    st.metric("Focus Points", ctx.video_transformer.count)
     
-    time.sleep(1) # Update the timer every second
+    if ctx.video_transformer.count > 0:
+        st.success("Great job! You are staying in the frame.")
+    else:
+        st.warning("Position yourself in front of the camera to start the timer.")
+
+st.info("Note: Click 'START' in the video window above to turn on your webcam.")
